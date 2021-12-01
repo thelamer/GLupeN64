@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2016 The RetroArch team
+/* Copyright  (C) 2010-2018 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (rxml_test.c).
@@ -29,7 +29,7 @@ static void print_siblings(struct rxml_node *node, unsigned level)
    if (node->data)
       fprintf(stderr, "%*sData: %s\n", level * 4, "", node->data);
 
-   for (const struct rxml_attrib_node *attrib = 
+   for (const struct rxml_attrib_node *attrib =
          node->attrib; attrib; attrib = attrib->next)
       fprintf(stderr, "%*s  Attrib: %s = %s\n", level * 4, "",
             attrib->attrib, attrib->value);
@@ -64,4 +64,3 @@ int main(int argc, char *argv[])
 
    rxml_log_document(argv[1]);
 }
-

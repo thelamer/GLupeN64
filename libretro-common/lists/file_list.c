@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2016 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (file_list.c).
@@ -24,70 +24,67 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <retro_assert.h>
 #include <retro_common.h>
 #include <lists/file_list.h>
+#include <string/stdstring.h>
 #include <compat/strcasestr.h>
 
-/**
- * file_list_capacity:
- * @list             : pointer to file list
- * @cap              : new capacity for file list.
- *
- * Change maximum capacity of file list's size.
- *
- * Returns: true (1) if successful, otherwise false (0).
- **/
-static struct item_file *realloc_file_list_capacity(file_list_t *list, size_t cap)
+static bool file_list_deinitialize_internal(file_list_t *list)
 {
-   struct item_file *new_data = NULL;
-   retro_assert(cap > list->size);
+   size_t i;
+   for (i = 0; i < list->size; i++)
+   {
+      file_list_free_userdata(list, i);
+      file_list_free_actiondata(list, i);
 
-   new_data = (struct item_file*)realloc(list->list,
-         cap * sizeof(struct item_file));
+      if (list->list[i].path)
+         free(list->list[i].path);
+      list->list[i].path = NULL;
+
+      if (list->list[i].label)
+         free(list->list[i].label);
+      list->list[i].label = NULL;
+
+      if (list->list[i].alt)
+         free(list->list[i].alt);
+      list->list[i].alt = NULL;
+   }
+   if (list->list)
+      free(list->list);
+   list->list = NULL;
+   return true;
+}
+
+bool file_list_initialize(file_list_t *list)
+{
+   if (!list)
+      return false;
+
+   list->list     = NULL;
+   list->capacity = 0;
+   list->size     = 0;
+
+   return true;
+}
+
+bool file_list_reserve(file_list_t *list, size_t nitems)
+{
+   const size_t item_size = sizeof(struct item_file);
+   struct item_file *new_data;
+
+   if (nitems < list->capacity || nitems > (size_t)-1/item_size)
+      return false;
+
+   new_data = (struct item_file*)realloc(list->list, nitems * item_size);
 
    if (!new_data)
-      return NULL;
+      return false;
 
-   if (cap > list->capacity)
-      memset(&new_data[list->capacity], 0,
-            sizeof(*new_data) * (cap - list->capacity));
+   memset(&new_data[list->capacity], 0, item_size * (nitems - list->capacity));
 
-   return new_data;
-}
+   list->list     = new_data;
+   list->capacity = nitems;
 
-static void file_list_add(file_list_t *list, unsigned idx,
-      const char *path, const char *label,
-      unsigned type, size_t directory_ptr,
-      size_t entry_idx)
-{
-   memset(&list->list[idx], 0, sizeof(*list->list));
-
-   list->list[idx].type          = type;
-   list->list[idx].directory_ptr = directory_ptr;
-   list->list[idx].entry_idx     = entry_idx;
-
-   if (label)
-      list->list[idx].label      = strdup(label);
-   if (path)
-      list->list[idx].path       = strdup(path);
-
-   list->size++;
-}
-
-static bool file_list_expand_if_needed(file_list_t *list)
-{
-   if (list->size >= list->capacity)
-   {
-      size_t new_capacity     = list->capacity * 2 + 1;
-      struct item_file *items = realloc_file_list_capacity(
-            list, new_capacity);
-
-      if (!items)
-         return false;
-      list->list     = items;
-      list->capacity = new_capacity;
-   }
    return true;
 }
 
@@ -96,16 +93,40 @@ bool file_list_prepend(file_list_t *list,
       unsigned type, size_t directory_ptr,
       size_t entry_idx)
 {
-   unsigned i;
-   
-   if (!file_list_expand_if_needed(list))
-      return false;
+   return file_list_insert(list, path,
+      label, type,
+      directory_ptr, entry_idx,
+      0
+   );
+}
 
-   for (i = list->size; i > 0; i--)
+bool file_list_insert(file_list_t *list,
+      const char *path, const char *label,
+      unsigned type, size_t directory_ptr,
+      size_t entry_idx,
+      size_t idx)
+{
+   int i;
+
+   /* Expand file list if needed */
+   if (list->size >= list->capacity)
+      if (!file_list_reserve(list, list->capacity * 2 + 1))
+         return false;
+
+   for (i = (unsigned)list->size; i > (int)idx; i--)
    {
       struct item_file *copy = (struct item_file*)
-         calloc(1, sizeof(struct item_file));
-      
+         malloc(sizeof(struct item_file));
+
+      copy->path             = NULL;
+      copy->label            = NULL;
+      copy->alt              = NULL;
+      copy->type             = 0;
+      copy->directory_ptr    = 0;
+      copy->entry_idx        = 0;
+      copy->userdata         = NULL;
+      copy->actiondata       = NULL;
+
       memcpy(copy, &list->list[i-1], sizeof(struct item_file));
 
       memcpy(&list->list[i-1], &list->list[i], sizeof(struct item_file));
@@ -114,8 +135,21 @@ bool file_list_prepend(file_list_t *list,
       free(copy);
    }
 
-   file_list_add(list, 0, path, label, type,
-         directory_ptr, entry_idx);
+   list->list[idx].path          = NULL;
+   list->list[idx].label         = NULL;
+   list->list[idx].alt           = NULL;
+   list->list[idx].type          = type;
+   list->list[idx].directory_ptr = directory_ptr;
+   list->list[idx].entry_idx     = entry_idx;
+   list->list[idx].userdata      = NULL;
+   list->list[idx].actiondata    = NULL;
+
+   if (label)
+      list->list[idx].label      = strdup(label);
+   if (path)
+      list->list[idx].path       = strdup(path);
+
+   list->size++;
 
    return true;
 }
@@ -125,11 +159,27 @@ bool file_list_append(file_list_t *list,
       unsigned type, size_t directory_ptr,
       size_t entry_idx)
 {
-   if (!file_list_expand_if_needed(list))
-      return false;
+   unsigned idx = (unsigned)list->size;
+   /* Expand file list if needed */
+   if (idx >= list->capacity)
+      if (!file_list_reserve(list, list->capacity * 2 + 1))
+         return false;
 
-   file_list_add(list, list->size, path, label, type,
-         directory_ptr, entry_idx);
+   list->list[idx].path          = NULL;
+   list->list[idx].label         = NULL;
+   list->list[idx].alt           = NULL;
+   list->list[idx].type          = type;
+   list->list[idx].directory_ptr = directory_ptr;
+   list->list[idx].entry_idx     = entry_idx;
+   list->list[idx].userdata      = NULL;
+   list->list[idx].actiondata    = NULL;
+
+   if (label)
+      list->list[idx].label      = strdup(label);
+   if (path)
+      list->list[idx].path       = strdup(path);
+
+   list->size++;
 
    return true;
 }
@@ -143,10 +193,9 @@ size_t file_list_get_size(const file_list_t *list)
 
 size_t file_list_get_directory_ptr(const file_list_t *list)
 {
-   size_t size = file_list_get_size(list);
+   size_t size = list ? list->size : 0;
    return list->list[size].directory_ptr;
 }
-
 
 void file_list_pop(file_list_t *list, size_t *directory_ptr)
 {
@@ -171,32 +220,21 @@ void file_list_pop(file_list_t *list, size_t *directory_ptr)
 
 void file_list_free(file_list_t *list)
 {
-   size_t i;
-
    if (!list)
       return;
-
-   for (i = 0; i < list->size; i++)
-   {
-      file_list_free_userdata(list, i);
-      file_list_free_actiondata(list, i);
-       
-      if (list->list[i].path)
-         free(list->list[i].path);
-      list->list[i].path = NULL;
-
-      if (list->list[i].label)
-         free(list->list[i].label);
-      list->list[i].label = NULL;
-
-      if (list->list[i].alt)
-         free(list->list[i].alt);
-      list->list[i].alt = NULL;
-   }
-   if (list->list)
-      free(list->list);
-   list->list = NULL;
+   file_list_deinitialize_internal(list);
    free(list);
+}
+
+bool file_list_deinitialize(file_list_t *list)
+{
+   if (!list)
+      return false;
+   if (!file_list_deinitialize_internal(list))
+      return false;
+   list->capacity = 0;
+   list->size     = 0;
+   return true;
 }
 
 void file_list_clear(file_list_t *list)
@@ -222,54 +260,6 @@ void file_list_clear(file_list_t *list)
    }
 
    list->size = 0;
-}
-
-void file_list_copy(const file_list_t *src, file_list_t *dst)
-{
-   struct item_file *item;
-
-   if (!src || !dst)
-      return;
-
-   if (dst->list)
-   {
-      for (item = dst->list; item < &dst->list[dst->size]; ++item)
-      {
-         if (item->path)
-            free(item->path);
-
-         if (item->label)
-            free(item->label);
-
-         if (item->alt)
-            free(item->alt);
-      }
-
-      free(dst->list);
-   }
-
-   dst->size     = 0;
-   dst->capacity = 0;
-   dst->list     = (struct item_file*)malloc(src->size * sizeof(struct item_file));
-
-   if (!dst->list)
-      return;
-
-   dst->size = dst->capacity = src->size;
-
-   memcpy(dst->list, src->list, dst->size * sizeof(struct item_file));
-
-   for (item = dst->list; item < &dst->list[dst->size]; ++item)
-   {
-      if (item->path)
-         item->path = strdup(item->path);
-
-      if (item->label)
-         item->label = strdup(item->label);
-
-      if (item->alt)
-         item->alt = strdup(item->alt);
-   }
 }
 
 void file_list_set_label_at_offset(file_list_t *list, size_t idx,
@@ -311,23 +301,12 @@ void file_list_set_alt_at_offset(file_list_t *list, size_t idx,
       list->list[idx].alt   = strdup(alt);
 }
 
-void file_list_get_alt_at_offset(const file_list_t *list, size_t idx,
-      const char **alt)
-{
-   if (!list)
-      return;
-
-   if (alt)
-      *alt = list->list[idx].alt ?
-         list->list[idx].alt : list->list[idx].path;
-}
-
 static int file_list_alt_cmp(const void *a_, const void *b_)
 {
    const struct item_file *a = (const struct item_file*)a_;
    const struct item_file *b = (const struct item_file*)b_;
-   const char *cmp_a = a->alt ? a->alt : a->path;
-   const char *cmp_b = b->alt ? b->alt : b->path;
+   const char *cmp_a         = a->alt ? a->alt : a->path;
+   const char *cmp_b         = b->alt ? b->alt : b->path;
    return strcasecmp(cmp_a, cmp_b);
 }
 
@@ -362,16 +341,14 @@ void *file_list_get_userdata_at_offset(const file_list_t *list, size_t idx)
 
 void file_list_set_userdata(const file_list_t *list, size_t idx, void *ptr)
 {
-   if (!list || !ptr)
-      return;
-   list->list[idx].userdata = ptr;
+   if (list && ptr)
+      list->list[idx].userdata = ptr;
 }
 
 void file_list_set_actiondata(const file_list_t *list, size_t idx, void *ptr)
 {
-   if (!list || !ptr)
-      return;
-   list->list[idx].actiondata = ptr;
+   if (list && ptr)
+      list->list[idx].actiondata = ptr;
 }
 
 void *file_list_get_actiondata_at_offset(const file_list_t *list, size_t idx)
@@ -427,26 +404,25 @@ void file_list_get_last(const file_list_t *list,
       const char **path, const char **label,
       unsigned *file_type, size_t *entry_idx)
 {
-   if (!list)
-      return;
-
-   if (list->size)
+   if (list && list->size)
       file_list_get_at_offset(list, list->size - 1, path, label, file_type, entry_idx);
 }
 
 bool file_list_search(const file_list_t *list, const char *needle, size_t *idx)
 {
    size_t i;
-   const char *alt;
-   bool ret = false;
+   bool ret        = false;
 
    if (!list)
       return false;
 
    for (i = 0; i < list->size; i++)
    {
-      const char *str;
-      file_list_get_alt_at_offset(list, i, &alt);
+      const char *str = NULL;
+      const char *alt = list->list[i].alt 
+            ? list->list[i].alt 
+            : list->list[i].path;
+
       if (!alt)
       {
          file_list_get_label_at_offset(list, i, &alt);
@@ -459,15 +435,15 @@ bool file_list_search(const file_list_t *list, const char *needle, size_t *idx)
       {
          /* Found match with first chars, best possible match. */
          *idx = i;
-         ret = true;
+         ret  = true;
          break;
       }
       else if (str && !ret)
       {
-         /* Found mid-string match, but try to find a match with 
+         /* Found mid-string match, but try to find a match with
           * first characters before we settle. */
          *idx = i;
-         ret = true;
+         ret  = true;
       }
    }
 

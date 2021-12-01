@@ -279,9 +279,7 @@ else ifeq ($(platform), emscripten)
    WITH_DYNAREC :=
    CPUFLAGS += -Dasm=asmerror -D__asm__=asmerror -DNO_ASM -DNOSSE
    SINGLE_THREAD := 1
-   PLATCFLAGS += -Drglgen_symbol_map=mupen_rglgen_symbol_map \
-                 -Dmain_exit=mupen_main_exit \
-                 -Dadler32=mupen_adler32 \
+   PLATCFLAGS += -Dmain_exit=mupen_main_exit \
                  -Drglgen_resolve_symbols_custom=mupen_rglgen_resolve_symbols_custom \
                  -Drglgen_resolve_symbols=mupen_rglgen_resolve_symbols \
                  -Dsinc_resampler=mupen_sinc_resampler \
@@ -289,13 +287,12 @@ else ifeq ($(platform), emscripten)
                  -DCC_resampler=mupen_CC_resampler \
                  -Daudio_resampler_driver_find_handle=mupen_audio_resampler_driver_find_handle \
                  -Daudio_resampler_driver_find_ident=mupen_audio_resampler_driver_find_ident \
-                 -Drarch_resampler_realloc=mupen_rarch_resampler_realloc \
-                 -Daudio_convert_s16_to_float_C=mupen_audio_convert_s16_to_float_C \
-                 -Daudio_convert_float_to_s16_C=mupen_audio_convert_float_to_s16_C \
-                 -Daudio_convert_init_simd=mupen_audio_convert_init_simd
-
+                 -Drarch_resampler_realloc=mupen_rarch_resampler_realloc 
    HAVE_NEON = 0
    PLATFORM_EXT := linux
+   CFLAGS += -s ASYNCIFY
+   LDFLAGS += -s TOTAL_MEMORY=33554432 -s ASYNCIFY
+   SOURCES_C += $(CORE_DIR)/src/r4300/empty_dynarec.c
    #HAVE_SHARED_CONTEXT := 1
 
 # Windows
@@ -341,7 +338,7 @@ ifeq ($(DEBUG), 1)
    CPUOPTS += -O0 -g
    CPUOPTS += -DOPENGL_DEBUG
 else
-   CPUOPTS += -O2 -DNDEBUG
+   CPUOPTS += -O3 -DNDEBUG
 endif
 
 #ifeq ($(platform), qnx)

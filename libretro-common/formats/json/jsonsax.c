@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2016 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (jsonsax.c).
@@ -54,13 +54,13 @@ state_t;
 
 static INLINE void skip_spaces( state_t* state )
 {
-  while ( isspace( *state->json ) )
+  while ( isspace( (unsigned char)*state->json ) )
     state->json++;
 }
 
 static INLINE void skip_digits( state_t* state )
 {
-  while ( isdigit( *state->json ) )
+  while ( isdigit( (unsigned char)*state->json ) )
     state->json++;
 }
 
@@ -146,7 +146,7 @@ static void jsonx_parse_array(state_t* state)
 
    while ( *state->json != ']' )
    {
-      HANDLE_1( index, ndx++ );
+      HANDLE_1( array_index, ndx++ );
       jsonx_parse_value( state );
       skip_spaces( state );
 
@@ -218,7 +218,7 @@ static void jsonx_parse_number(state_t* state)
    if ( *state->json == '-' )
       state->json++;
 
-   if ( !isdigit( *state->json ) )
+   if ( !isdigit( (unsigned char)*state->json ) )
       longjmp( state->env, JSONSAX_INVALID_VALUE );
 
    skip_digits( state );
@@ -227,7 +227,7 @@ static void jsonx_parse_number(state_t* state)
    {
       state->json++;
 
-      if ( !isdigit( *state->json ) )
+      if ( !isdigit( (unsigned char)*state->json ) )
          longjmp( state->env, JSONSAX_INVALID_VALUE );
 
       skip_digits( state );
@@ -240,7 +240,7 @@ static void jsonx_parse_number(state_t* state)
       if ( *state->json == '-' || *state->json == '+' )
          state->json++;
 
-      if ( !isdigit( *state->json ) )
+      if ( !isdigit( (unsigned char)*state->json ) )
          longjmp( state->env, JSONSAX_INVALID_VALUE );
 
       skip_digits( state );

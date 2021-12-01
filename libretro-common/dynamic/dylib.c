@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2016 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (dylib.c).
@@ -23,6 +23,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <dynamic/dylib.h>
+#include <encodings/utf.h>
 
 #ifdef NEED_DYNAMIC
 
@@ -31,6 +32,15 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#endif
+
+/* Assume W-functions do not work below Win2K and Xbox platforms */
+#if defined(_WIN32_WINNT) && _WIN32_WINNT < 0x0500 || defined(_XBOX)
+
+#ifndef LEGACY_WIN32
+#define LEGACY_WIN32
+#endif
+
 #endif
 
 #ifdef _WIN32
@@ -64,10 +74,43 @@ static void set_dl_error(void)
 dylib_t dylib_load(const char *path)
 {
 #ifdef _WIN32
+#ifndef __WINRT__
    int prevmode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
-   dylib_t lib  = LoadLibrary(path);
+#endif
+#ifdef __WINRT__
+   dylib_t lib;
+   /* On UWP, you can only load DLLs inside your install directory, using a special function that takes a relative path */
+   char relative_path_abbrev[PATH_MAX_LENGTH];
+   char *relative_path = relative_path_abbrev;
+   wchar_t *path_wide  = NULL;
 
+   relative_path_abbrev[0] = '\0';
+
+   if (!path_is_absolute(path))
+      RARCH_WARN("Relative path in dylib_load! This is likely an attempt to load a system library that will fail\n");
+
+   fill_pathname_abbreviate_special(relative_path_abbrev, path, sizeof(relative_path_abbrev));
+
+   /* Path to dylib_load is not inside app install directory.
+    * Loading will probably fail. */
+   if (relative_path[0] != ':' || !PATH_CHAR_IS_SLASH(relative_path[1])) { }
+   else
+      relative_path += 2;
+
+   path_wide = utf8_to_utf16_string_alloc(relative_path);
+   lib       = LoadPackagedLibrary(path_wide, 0);
+   free(path_wide);
+#elif defined(LEGACY_WIN32)
+   dylib_t lib        = LoadLibrary(path);
+#else
+   wchar_t *path_wide = utf8_to_utf16_string_alloc(path);
+   dylib_t lib        = LoadLibraryW(path_wide);
+   free(path_wide);
+#endif
+
+#ifndef __WINRT__
    SetErrorMode(prevmode);
+#endif
 
    if (!lib)
    {
@@ -76,7 +119,7 @@ dylib_t dylib_load(const char *path)
    }
    last_dyn_error[0] = 0;
 #else
-   dylib_t lib = dlopen(path, RTLD_LAZY);
+   dylib_t lib = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
 #endif
    return lib;
 }
@@ -97,8 +140,21 @@ function_t dylib_proc(dylib_t lib, const char *proc)
    function_t sym;
 
 #ifdef _WIN32
-   sym = (function_t)GetProcAddress(lib ?
-         (HMODULE)lib : GetModuleHandle(NULL), proc);
+   HMODULE mod = (HMODULE)lib;
+#ifndef __WINRT__
+   if (!mod)
+      mod = GetModuleHandle(NULL);
+#else
+   /* GetModuleHandle is not available on UWP */
+   if (!mod)
+   {
+      /* It's not possible to lookup symbols in current executable
+       * on UWP. */
+      DebugBreak();
+      return NULL;
+   }
+#endif
+   sym = (function_t)GetProcAddress(mod, proc);
    if (!sym)
    {
       set_dl_error();

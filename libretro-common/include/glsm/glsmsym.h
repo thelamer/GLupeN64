@@ -1,4 +1,4 @@
-/* Copyright (C) 2010-2016 The RetroArch team
+/* Copyright (C) 2010-2018 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this libretro SDK code part (glsmsym.h).
@@ -25,6 +25,10 @@
 
 #include <glsm/glsm.h>
 
+#ifdef HAVE_GLSYM_PRIVATE
+#include "glsym_private.h"
+#endif
+
 #include <retro_common_api.h>
 
 RETRO_BEGIN_DECLS
@@ -33,6 +37,21 @@ RETRO_BEGIN_DECLS
 #define glTexCoord2f                rglTexCoord2f
 
 /* more forward-compatible GL subset symbols */
+#define glDrawRangeElementsBaseVertex rglDrawRangeElementsBaseVertex
+#define glProvokingVertex           rglProvokingVertex
+#define glGetInteger64v             rglGetInteger64v
+#define glGenSamplers               rglGenSamplers
+#define glBindSampler               rglBindSampler
+#define glSamplerParameteri         rglSamplerParameteri
+#define glGetBufferSubData          rglGetBufferSubData
+#define glUniform2iv                rglUniform2iv
+#define glUniform2uiv               rglUniform2uiv
+#define glTextureView               rglTextureView
+#define glGetQueryObjectuiv         rglGetQueryObjectuiv
+#define glGenQueries                rglGenQueries
+#define glDeleteQueries             rglDeleteQueries
+#define glBeginQuery                rglBeginQuery
+#define glEndQuery                  rglEndQuery
 #define glBlitFramebuffer           rglBlitFramebuffer
 #define glVertexAttrib4f            rglVertexAttrib4f
 #define glVertexAttrib4fv           rglVertexAttrib4fv
@@ -135,13 +154,14 @@ RETRO_BEGIN_DECLS
 #define glUniformBlockBinding       rglUniformBlockBinding
 #define glGetUniformBlockIndex      rglGetUniformBlockIndex
 #define glGetActiveUniformBlockiv   rglGetActiveUniformBlockiv
-#define glBindBufferBase            rglBindBufferBase 
+#define glBindBufferBase            rglBindBufferBase
 #define glGetUniformIndices         rglGetUniformIndices
 #define glGetActiveUniformsiv       rglGetActiveUniformsiv
 #define glGetError                  rglGetError
 #define glClear                     rglClear
 #define glPolygonMode               rglPolygonMode
 #define glLineWidth                 rglLineWidth
+#define glTexImage3D                rglTexImage3D
 #define glTexImage2DMultisample     rglTexImage2DMultisample
 #define glTexStorage2DMultisample   rglTexStorage2DMultisample
 #define glMemoryBarrier             rglMemoryBarrier
@@ -161,6 +181,11 @@ RETRO_BEGIN_DECLS
 #define glClearBufferfi             rglClearBufferfi
 #define glWaitSync                  rglWaitSync
 #define glFenceSync                 rglFenceSync
+#define glDeleteSync                rglDeleteSync
+#define glBufferStorage             rglBufferStorage
+#define glFlushMappedBufferRange    rglFlushMappedBufferRange
+#define glClientWaitSync            rglClientWaitSync
+#define glDrawElementsBaseVertex    rglDrawElementsBaseVertex
 
 const GLubyte* rglGetStringi(GLenum name, GLuint index);
 void rglTexBuffer(GLenum target, GLenum internalFormat, GLuint buffer);
@@ -324,6 +349,27 @@ void rglVertexAttrib4f(GLuint name, GLfloat x, GLfloat y,
 void rglVertexAttrib4fv(GLuint name, GLfloat* v);
 void rglDeleteProgram(GLuint program);
 void rglDeleteBuffers(GLsizei n, const GLuint *buffers);
+void rglUniform2uiv(	GLint location,
+ 	GLsizei count,
+ 	const GLuint *value);
+void rglTextureView(	GLuint texture,
+ 	GLenum target,
+ 	GLuint origtexture,
+ 	GLenum internalformat,
+ 	GLuint minlevel,
+ 	GLuint numlevels,
+ 	GLuint minlayer,
+ 	GLuint numlayers);
+void rglGenQueries(	GLsizei n,
+ 	GLuint * ids);
+void rglDeleteQueries(	GLsizei n,
+ 	const GLuint * ids);
+void rglBeginQuery(	GLenum target,
+ 	GLuint id);
+void rglEndQuery(	GLenum target);
+void rglGetQueryObjectuiv(	GLuint id,
+ 	GLenum pname,
+ 	GLuint * params);
 void rglBlitFramebuffer(
       GLint srcX0, GLint srcY0,
       GLint srcX1, GLint srcY1,
@@ -378,6 +424,16 @@ GLenum rglGetError(void);
 void rglClear(GLbitfield mask);
 void rglPolygonMode(GLenum face, GLenum mode);
 void rglLineWidth(GLfloat width);
+void rglTexImage3D(	GLenum target,
+ 	GLint level,
+ 	GLint internalFormat,
+ 	GLsizei width,
+ 	GLsizei height,
+ 	GLsizei depth,
+ 	GLint border,
+ 	GLenum format,
+ 	GLenum type,
+ 	const GLvoid * data);
 void rglTexImage2DMultisample( 	GLenum target,
   	GLsizei samples,
   	GLenum internalformat,
@@ -396,7 +452,31 @@ void rglTexSubImage2D( 	GLenum target,
   	const GLvoid * pixels);
 void rglDeleteVertexArrays(GLsizei n, const GLuint *arrays);
 void *rglFenceSync(GLenum condition, GLbitfield flags);
+void rglDeleteSync(void *sync);
 void rglWaitSync(void *sync, GLbitfield flags, uint64_t timeout);
+void rglBufferStorage(GLenum target, GLsizeiptr size, const GLvoid *data, GLbitfield flags);
+void rglFlushMappedBufferRange(GLenum target, GLintptr offset, GLsizeiptr length);
+GLenum rglClientWaitSync(void *sync, GLbitfield flags, uint64_t timeout);
+void rglDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type,
+			       GLvoid *indices, GLint basevertex);
+void rglGetBufferSubData(	GLenum target,
+ 	GLintptr offset,
+ 	GLsizeiptr size,
+ 	GLvoid * data);
+void rglSamplerParameteri(	GLuint sampler,
+ 	GLenum pname,
+ 	GLint param);
+void rglBindSampler(	GLuint unit,
+ 	GLuint sampler);
+void rglGenSamplers(	GLsizei n,
+ 	GLuint *samplers);
+void rglGetInteger64v(	GLenum pname,
+ 	int64_t * data);
+void rglUniform2iv(	GLint location,
+ 	GLsizei count,
+ 	const GLint *value);
+void rglProvokingVertex(	GLenum provokeMode);
+void rglDrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, GLvoid *indices, GLint basevertex);
 
 RETRO_END_DECLS
 

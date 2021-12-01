@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2016 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (dir_list.c).
@@ -22,6 +22,12 @@
 
 #include <stdlib.h>
 
+#if defined(_WIN32) && defined(_XBOX)
+#include <xtl.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#endif
+
 #include <lists/dir_list.h>
 #include <lists/string_list.h>
 #include <file/file_path.h>
@@ -29,6 +35,7 @@
 #include <compat/strl.h>
 #include <retro_dirent.h>
 
+#include <string/stdstring.h>
 #include <retro_miscellaneous.h>
 
 static int qstrcmp_plain(const void *a_, const void *b_)
@@ -45,7 +52,6 @@ static int qstrcmp_dir(const void *a_, const void *b_)
    const struct string_list_elem *b = (const struct string_list_elem*)b_;
    int a_type = a->attr.i;
    int b_type = b->attr.i;
-
 
    /* Sort directories before files. */
    if (a_type != b_type)
@@ -80,104 +86,11 @@ void dir_list_free(struct string_list *list)
    string_list_free(list);
 }
 
-/**
- * parse_dir_entry:
- * @name               : name of the directory listing entry.
- * @file_path          : file path of the directory listing entry.
- * @is_dir             : is the directory listing a directory?
- * @include_dirs       : include directories as part of the finished directory listing?
- * @include_compressed : Include compressed files, even if not part of ext_list.
- * @list               : pointer to directory listing.
- * @ext_list           : pointer to allowed file extensions listing.
- * @file_ext           : file extension of the directory listing entry.
- *
- * Parses a directory listing.
- *
- * Returns: zero on success, -1 on error, 1 if we should
- * continue to the next entry in the directory listing.
- **/
-static int parse_dir_entry(const char *name, char *file_path,
-      bool is_dir, bool include_dirs, bool include_compressed,
-      struct string_list *list, struct string_list *ext_list,
-      const char *file_ext)
+bool dir_list_deinitialize(struct string_list *list)
 {
-   union string_list_elem_attr attr;
-   bool is_compressed_file = false;
-   bool supported_by_core  = false;
-
-   attr.i                  = RARCH_FILETYPE_UNSET;
-
-   if (!is_dir)
-   {
-      is_compressed_file = path_is_compressed_file(file_path);
-      if (string_list_find_elem_prefix(ext_list, ".", file_ext))
-         supported_by_core = true;
-   }
-
-   if (!include_dirs && is_dir)
-      return 1;
-
-   if (!strcmp(name, ".") || !strcmp(name, ".."))
-      return 1;
-
-   if (!is_dir && ext_list &&
-           ((!is_compressed_file && !supported_by_core) ||
-            (!supported_by_core && !include_compressed)))
-      return 1;
-
-   if (is_dir)
-      attr.i = RARCH_DIRECTORY;
-   if (is_compressed_file)
-      attr.i = RARCH_COMPRESSED_ARCHIVE;
-   /* The order of these ifs is important.
-    * If the file format is explicitly supported by the libretro-core, we
-    * need to immediately load it and not designate it as a compressed file.
-    *
-    * Example: .zip could be supported as a image by the core and as a
-    * compressed_file. In that case, we have to interpret it as a image.
-    *
-    * */
-   if (supported_by_core)
-      attr.i = RARCH_PLAIN_FILE;
-
-   if (!string_list_append(list, file_path, attr))
-      return -1;
-
-   return 0;
-}
-
-/**
- * dir_list_new:
- * @dir                : directory path.
- * @ext                : allowed extensions of file directory entries to include.
- * @include_dirs       : include directories as part of the finished directory listing?
- * @include_compressed : Only include files which match ext. Do not try to match compressed files, etc.
- *
- * Create a directory listing.
- *
- * Returns: pointer to a directory listing of type 'struct string_list *' on success,
- * NULL in case of error. Has to be freed manually.
- **/
-struct string_list *dir_list_new(const char *dir,
-      const char *ext, bool include_dirs, bool include_compressed, bool recursive)
-{
-   struct string_list *ext_list   = NULL;
-   struct string_list *list       = NULL;
-
-   if (!(list = string_list_new()))
-      return NULL;
-
-   if (ext)
-      ext_list = string_split(ext, "|");
-
-   if(dir_list_read(dir, list, ext_list, include_dirs, include_compressed, recursive) == -1) {
-      string_list_free(list);
-      string_list_free(ext_list);
-      return NULL;
-   }
-
-   string_list_free(ext_list);
-   return list;
+   if (!list)
+      return false;
+   return string_list_deinitialize(list);
 }
 
 /**
@@ -186,57 +99,182 @@ struct string_list *dir_list_new(const char *dir,
  * @list               : the string list to add files to
  * @ext_list           : the string list of extensions to include
  * @include_dirs       : include directories as part of the finished directory listing?
+ * @include_hidden     : include hidden files and directories as part of the finished directory listing?
  * @include_compressed : Only include files which match ext. Do not try to match compressed files, etc.
+ * @recursive          : list directory contents recursively
  *
  * Add files within a directory to an existing string list
  *
  * Returns: -1 on error, 0 on success.
  **/
-int dir_list_read(const char *dir, struct string_list *list, struct string_list *ext_list, bool include_dirs, bool include_compressed, bool recursive)
+static int dir_list_read(const char *dir,
+      struct string_list *list, struct string_list *ext_list,
+      bool include_dirs, bool include_hidden,
+      bool include_compressed, bool recursive)
 {
-   struct RDIR *entry = retro_opendir(dir);
+   struct RDIR *entry = retro_opendir_include_hidden(dir, include_hidden);
 
-   if (!entry)
-      return -1;
-
-   if (retro_dirent_error(entry))
-   {
-      retro_closedir(entry);
-      return -1;
-   }
+   if (!entry || retro_dirent_error(entry))
+      goto error;
 
    while (retro_readdir(entry))
    {
-      bool is_dir                     = false;
-      char file_path[PATH_MAX_LENGTH] = {0};
-      int ret                         = 0;
+      union string_list_elem_attr attr;
+      char file_path[PATH_MAX_LENGTH];
       const char *name                = retro_dirent_get_name(entry);
-      const char *file_ext            = path_get_extension(name);
 
-      fill_pathname_join(file_path, dir, name, sizeof(file_path));
-      is_dir = retro_dirent_is_dir(entry, file_path);
-
-      if(is_dir && recursive) {
-         if(strncmp(name, ".", 1) == 0 || strncmp(name, "..", 2) == 0)
+      if (name[0] == '.')
+      {
+         /* Do not include hidden files and directories */
+         if (!include_hidden)
             continue;
 
-         dir_list_read(file_path, list, ext_list, include_dirs, include_compressed, recursive);
+         /* char-wise comparisons to avoid string comparison */
+
+         /* Do not include current dir */
+         if (name[1] == '\0')
+            continue;
+         /* Do not include parent dir */
+         if (name[1] == '.' && name[2] == '\0')
+            continue;
       }
 
-      ret    = parse_dir_entry(name, file_path, is_dir,
-            include_dirs, include_compressed, list, ext_list, file_ext);
+      file_path[0] = '\0';
+      fill_pathname_join(file_path, dir, name, sizeof(file_path));
 
-      if (ret == -1)
+      if (retro_dirent_is_dir(entry, NULL))
       {
-         retro_closedir(entry);
-         return -1;
+         if (recursive)
+            dir_list_read(file_path, list, ext_list, include_dirs,
+                  include_hidden, include_compressed, recursive);
+
+         if (!include_dirs)
+            continue;
+         attr.i = RARCH_DIRECTORY;
+      }
+      else
+      {
+         const char *file_ext    = path_get_extension(name);
+
+         attr.i                  = RARCH_FILETYPE_UNSET;
+
+         /*
+          * If the file format is explicitly supported by the libretro-core, we
+          * need to immediately load it and not designate it as a compressed file.
+          *
+          * Example: .zip could be supported as a image by the core and as a
+          * compressed_file. In that case, we have to interpret it as a image.
+          *
+          * */
+         if (string_list_find_elem_prefix(ext_list, ".", file_ext))
+            attr.i            = RARCH_PLAIN_FILE;
+         else
+         {
+            bool is_compressed_file;
+            if ((is_compressed_file = path_is_compressed_file(file_path)))
+               attr.i               = RARCH_COMPRESSED_ARCHIVE;
+
+            if (ext_list &&
+                  (!is_compressed_file || !include_compressed))
+               continue;
+         }
       }
 
-      if (ret == 1)
-         continue;
+      if (!string_list_append(list, file_path, attr))
+         goto error;
    }
 
    retro_closedir(entry);
 
    return 0;
+
+error:
+   if (entry)
+      retro_closedir(entry);
+   return -1;
+}
+
+/**
+ * dir_list_append:
+ * @list               : existing list to append to.
+ * @dir                : directory path.
+ * @ext                : allowed extensions of file directory entries to include.
+ * @include_dirs       : include directories as part of the finished directory listing?
+ * @include_hidden     : include hidden files and directories as part of the finished directory listing?
+ * @include_compressed : Only include files which match ext. Do not try to match compressed files, etc.
+ * @recursive          : list directory contents recursively
+ *
+ * Create a directory listing, appending to an existing list
+ *
+ * Returns: true success, false in case of error.
+ **/
+bool dir_list_append(struct string_list *list,
+      const char *dir,
+      const char *ext, bool include_dirs,
+      bool include_hidden, bool include_compressed,
+      bool recursive)
+{
+   bool ret                         = false;
+   struct string_list ext_list      = {0};
+   struct string_list *ext_list_ptr = NULL;
+
+   if (ext)
+   {
+      string_list_initialize(&ext_list);
+      string_split_noalloc(&ext_list, ext, "|");
+      ext_list_ptr                  = &ext_list;
+   }
+   ret                            = dir_list_read(dir, list, ext_list_ptr,
+         include_dirs, include_hidden, include_compressed, recursive) != -1;
+   string_list_deinitialize(&ext_list);
+   return ret;
+}
+
+/**
+ * dir_list_new:
+ * @dir                : directory path.
+ * @ext                : allowed extensions of file directory entries to include.
+ * @include_dirs       : include directories as part of the finished directory listing?
+ * @include_hidden     : include hidden files and directories as part of the finished directory listing?
+ * @include_compressed : Only include files which match ext. Do not try to match compressed files, etc.
+ * @recursive          : list directory contents recursively
+ *
+ * Create a directory listing.
+ *
+ * Returns: pointer to a directory listing of type 'struct string_list *' on success,
+ * NULL in case of error. Has to be freed manually.
+ **/
+struct string_list *dir_list_new(const char *dir,
+      const char *ext, bool include_dirs,
+      bool include_hidden, bool include_compressed,
+      bool recursive)
+{
+   struct string_list *list       = string_list_new();
+
+   if (!list)
+      return NULL;
+
+   if (!dir_list_append(list, dir, ext, include_dirs,
+            include_hidden, include_compressed, recursive))
+   {
+      string_list_free(list);
+      return NULL;
+   }
+
+   return list;
+}
+
+/* Warning: 'list' must zero initialised before
+ * calling this function, otherwise memory leaks/
+ * undefined behaviour will occur */
+bool dir_list_initialize(struct string_list *list,
+      const char *dir,
+      const char *ext, bool include_dirs,
+      bool include_hidden, bool include_compressed,
+      bool recursive)
+{
+   if (!list || !string_list_initialize(list))
+      return false;
+   return dir_list_append(list, dir, ext, include_dirs,
+            include_hidden, include_compressed, recursive);
 }

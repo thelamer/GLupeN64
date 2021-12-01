@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2016 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (fifo_queue.c).
@@ -23,38 +23,32 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <retro_common_api.h>
+#include <retro_inline.h>
+#include <boolean.h>
+
 #include <queues/fifo_queue.h>
 
-struct fifo_buffer
+static bool fifo_initialize_internal(fifo_buffer_t *buf, size_t size)
 {
-   uint8_t *buffer;
-   size_t size;
-   size_t first;
-   size_t end;
-};
+   uint8_t *buffer    = (uint8_t*)calloc(1, size + 1);
 
-fifo_buffer_t *fifo_new(size_t size)
-{
-   fifo_buffer_t *buf = (fifo_buffer_t*)calloc(1, sizeof(*buf));
+   if (!buffer)
+      return false;
 
-   if (!buf)
-      return NULL;
+   buf->buffer        = buffer;
+   buf->size          = size + 1;
+   buf->first         = 0;
+   buf->end           = 0;
 
-   buf->buffer = (uint8_t*)calloc(1, size + 1);
-   if (!buf->buffer)
-   {
-      free(buf);
-      return NULL;
-   }
-   buf->size = size + 1;
-
-   return buf;
+   return true;
 }
 
-void fifo_clear(fifo_buffer_t *buffer)
+bool fifo_initialize(fifo_buffer_t *buf, size_t size)
 {
-   buffer->first = 0;
-   buffer->end   = 0;
+   if (!buf)
+      return false;
+   return fifo_initialize_internal(buf, size);
 }
 
 void fifo_free(fifo_buffer_t *buffer)
@@ -66,25 +60,35 @@ void fifo_free(fifo_buffer_t *buffer)
    free(buffer);
 }
 
-size_t fifo_read_avail(fifo_buffer_t *buffer)
+bool fifo_deinitialize(fifo_buffer_t *buffer)
 {
-   size_t first = buffer->first;
-   size_t end   = buffer->end;
+   if (!buffer)
+      return false;
 
-   if (end < first)
-      end += buffer->size;
-   return end - first;
+   if (buffer->buffer)
+      free(buffer->buffer);
+   buffer->buffer = NULL;
+   buffer->size   = 0;
+   buffer->first  = 0;
+   buffer->end    = 0;
+
+   return true;
 }
 
-size_t fifo_write_avail(fifo_buffer_t *buffer)
+fifo_buffer_t *fifo_new(size_t size)
 {
-   size_t first = buffer->first;
-   size_t end   = buffer->end;
+   fifo_buffer_t *buf = (fifo_buffer_t*)malloc(sizeof(*buf));
 
-   if (end < first)
-      end += buffer->size;
+   if (!buf)
+      return NULL;
 
-   return (buffer->size - 1) - (end - first);
+   if (!fifo_initialize_internal(buf, size))
+   {
+      free(buf);
+      return NULL;
+   }
+
+   return buf;
 }
 
 void fifo_write(fifo_buffer_t *buffer, const void *in_buf, size_t size)
@@ -95,7 +99,7 @@ void fifo_write(fifo_buffer_t *buffer, const void *in_buf, size_t size)
    if (buffer->end + size > buffer->size)
    {
       first_write = buffer->size - buffer->end;
-      rest_write = size - first_write;
+      rest_write  = size - first_write;
    }
 
    memcpy(buffer->buffer + buffer->end, in_buf, first_write);
@@ -103,7 +107,6 @@ void fifo_write(fifo_buffer_t *buffer, const void *in_buf, size_t size)
 
    buffer->end = (buffer->end + size) % buffer->size;
 }
-
 
 void fifo_read(fifo_buffer_t *buffer, void *in_buf, size_t size)
 {
@@ -113,7 +116,7 @@ void fifo_read(fifo_buffer_t *buffer, void *in_buf, size_t size)
    if (buffer->first + size > buffer->size)
    {
       first_read = buffer->size - buffer->first;
-      rest_read = size - first_read;
+      rest_read  = size - first_read;
    }
 
    memcpy(in_buf, (const uint8_t*)buffer->buffer + buffer->first, first_read);
@@ -121,4 +124,3 @@ void fifo_read(fifo_buffer_t *buffer, void *in_buf, size_t size)
 
    buffer->first = (buffer->first + size) % buffer->size;
 }
-

@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2016 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (image_transfer.c).
@@ -49,9 +49,13 @@ void image_transfer_free(void *data, enum image_type_enum type)
 #endif
          break;
       case IMAGE_TYPE_PNG:
+         {
 #ifdef HAVE_RPNG
-         rpng_free((rpng_t*)data);
+            rpng_t *rpng = (rpng_t*)data;
+            if (rpng)
+               rpng_free(rpng);
 #endif
+         }
          break;
       case IMAGE_TYPE_JPEG:
 #ifdef HAVE_RJPEG
@@ -173,13 +177,14 @@ bool image_transfer_is_valid(
 void image_transfer_set_buffer_ptr(
       void *data,
       enum image_type_enum type,
-      void *ptr)
+      void *ptr,
+      size_t len)
 {
    switch (type)
    {
       case IMAGE_TYPE_PNG:
 #ifdef HAVE_RPNG
-         rpng_set_buf_ptr((rpng_t*)data, (uint8_t*)ptr);
+         rpng_set_buf_ptr((rpng_t*)data, (uint8_t*)ptr, len);
 #endif
          break;
       case IMAGE_TYPE_JPEG:
@@ -212,9 +217,6 @@ int image_transfer_process(
    {
       case IMAGE_TYPE_PNG:
 #ifdef HAVE_RPNG
-         if (!rpng_is_valid((rpng_t*)data))
-            return IMAGE_PROCESS_ERROR;
-
          return rpng_process_image(
                (rpng_t*)data,
                (void**)buf, len, width, height);
@@ -251,7 +253,7 @@ int image_transfer_process(
 
 bool image_transfer_iterate(void *data, enum image_type_enum type)
 {
-   
+
    switch (type)
    {
       case IMAGE_TYPE_PNG:

@@ -164,16 +164,10 @@ endif
 
 SOURCES_C += $(LIBRETRO_DIR)/libretro.c \
 	$(ROOT_DIR)/custom/mupen64plus-core/plugin/emulate_game_controller_via_libretro.c \
-	$(LIBRETRO_COMM_DIR)/memmap/memalign.c \
 	$(AUDIO_LIBRETRO_DIR)/audio_backend_libretro.c \
 	$(AUDIO_LIBRETRO_DIR)/audio_resampler_driver.c \
 	$(AUDIO_LIBRETRO_DIR)/drivers_resampler/sinc_resampler.c \
-	$(AUDIO_LIBRETRO_DIR)/drivers_resampler/cc_resampler.c \
-	$(LIBRETRO_COMM_DIR)/compat/compat_strl.c \
-	$(LIBRETRO_COMM_DIR)/streams/file_stream.c \
-	$(LIBRETRO_COMM_DIR)/conversion/float_to_s16.c \
-	$(LIBRETRO_COMM_DIR)/conversion/s16_to_float.c \
-	$(LIBRETRO_COMM_DIR)/features/features_cpu.c
+	$(AUDIO_LIBRETRO_DIR)/drivers_resampler/cc_resampler.c 
 
 SOURCES_CXX   += \
 	$(VIDEODIR_GLIDEN64)/src/Combiner.cpp \
@@ -243,9 +237,9 @@ endif
 ifeq ($(HAVE_OPENGL),1)
 ifeq ($(GLES),1)
 	GLFLAGS += -DHAVE_OPENGLES -DHAVE_OPENGLES2 -DGLES2
-	SOURCES_C += $(LIBRETRO_COMM_DIR)/glsym/glsym_es2.c
 	SOURCES_CXX += $(VIDEODIR_GLIDEN64)/src/GLES2/GLSLCombiner_gles2.cpp \
-		$(VIDEODIR_GLIDEN64)/src/BufferCopy/ColorBufferToRDRAMStub.cpp
+		$(VIDEODIR_GLIDEN64)/src/BufferCopy/ColorBufferToRDRAMStub.cpp \
+		$(VIDEODIR_GLIDEN64)/src/convert.cpp
 else ifeq ($(GLES3),1)
 	GLFLAGS += -DHAVE_OPENGLES -DHAVE_OPENGLES3 -DGLES3
 	SOURCES_C += $(LIBRETRO_COMM_DIR)/glsym/glsym_es3.c

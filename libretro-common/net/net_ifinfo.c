@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2016 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (net_ifinfo.c).
@@ -38,11 +38,17 @@
 #ifdef WANT_IFADDRS
 #include <compat/ifaddrs.h>
 #else
+#if !defined HAVE_LIBNX && !defined(_3DS)
 #include <ifaddrs.h>
+#endif
 #endif
 #endif
 
 #include <net/net_ifinfo.h>
+
+#if defined(BSD)
+#include <netinet/in.h>
+#endif
 
 void net_ifinfo_free(net_ifinfo_t *list)
 {
@@ -53,7 +59,7 @@ void net_ifinfo_free(net_ifinfo_t *list)
 
    for (k = 0; k < list->size; k++)
    {
-      struct net_ifinfo_entry *ptr = 
+      struct net_ifinfo_entry *ptr =
          (struct net_ifinfo_entry*)&list->entries[k];
 
       if (*ptr->name)
@@ -65,32 +71,107 @@ void net_ifinfo_free(net_ifinfo_t *list)
       ptr->host = NULL;
    }
    free(list->entries);
-   free(list);
 }
+
+#if defined(HAVE_LIBNX) || defined(_3DS)
+static void convert_ip(char *dst, size_t size, uint32_t ip, bool inverted)
+{
+   unsigned char bytes[4];
+   bytes[0] = ip & 0xFF;
+   bytes[1] = (ip >> 8) & 0xFF;
+   bytes[2] = (ip >> 16) & 0xFF;
+   bytes[3] = (ip >> 24) & 0xFF;
+
+   if (inverted)
+      snprintf(dst, size, "%d.%d.%d.%d", bytes[0], bytes[1], bytes[2], bytes[3]);
+   else
+      snprintf(dst, size, "%d.%d.%d.%d", bytes[3], bytes[2], bytes[1], bytes[0]);
+}
+#endif
 
 bool net_ifinfo_new(net_ifinfo_t *list)
 {
    unsigned k              = 0;
-#if defined(_WIN32) && !defined(_XBOX)
-   DWORD size;
-   PIP_ADAPTER_ADDRESSES adapter_addresses, aa;
-   PIP_ADAPTER_UNICAST_ADDRESS ua;
+#if defined(HAVE_LIBNX) || defined(_3DS)
+   uint32_t id;
+   Result rc;
 
+   char hostname[128];
+   struct net_ifinfo_entry *ptr = NULL;
+
+   memset(list, 0, sizeof(net_ifinfo_t));
+
+   /* loopback */
+   convert_ip(hostname, sizeof(hostname), INADDR_LOOPBACK, false);
+
+   ptr = (struct net_ifinfo_entry*)
+         realloc(list->entries, (k+1) * sizeof(struct net_ifinfo_entry));
+
+   if (!ptr)
+      goto error;
+
+   list->entries          = ptr;
+
+   list->entries[k].name  = strdup("lo");
+   list->entries[k].host  = strdup(hostname);
+   list->size             = k + 1;
+
+   k++;
+
+   /*
+      actual interface
+      can be wlan or eth (with a wiiu adapter)
+      so we just use "switch" as a name
+   */
+#if defined(_3DS)
+   convert_ip(hostname, sizeof(hostname), gethostid(), true);
+#else
+   rc = nifmGetCurrentIpAddress(&id);
+
+   if (!R_SUCCEEDED(rc)) /* not connected to any network */
+      return true;
+
+   convert_ip(hostname, sizeof(hostname), id, true);
+#endif
+
+   ptr = (struct net_ifinfo_entry*)
+         realloc(list->entries, (k+1) * sizeof(struct net_ifinfo_entry));
+
+   if (!ptr)
+      goto error;
+
+   list->entries          = ptr;
+#if defined(_3DS)
+   list->entries[k].name  = strdup("wlan");
+#else
+   list->entries[k].name  = strdup("switch");
+#endif
+   list->entries[k].host  = strdup(hostname);
+   list->size             = k + 1;
+
+   return true;
+#elif defined(_WIN32) && !defined(_XBOX)
+   PIP_ADAPTER_ADDRESSES adapter_addresses = NULL, aa = NULL;
+   PIP_ADAPTER_UNICAST_ADDRESS ua = NULL;
+#ifdef _WIN32_WINNT_WINXP
+   DWORD size = 0;
    DWORD rv = GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, NULL, NULL, &size);
 
    adapter_addresses = (PIP_ADAPTER_ADDRESSES)malloc(size);
 
    rv = GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, NULL, adapter_addresses, &size);
 
+   memset(list, 0, sizeof(net_ifinfo_t));
+
    if (rv != ERROR_SUCCESS)
       goto error;
-
+#endif
    for (aa = adapter_addresses; aa != NULL; aa = aa->Next)
    {
       char name[PATH_MAX_LENGTH];
       memset(name, 0, sizeof(name));
 
-      WideCharToMultiByte(CP_ACP, 0, aa->FriendlyName, wcslen(aa->FriendlyName),
+      WideCharToMultiByte(CP_UTF8, 0, aa->FriendlyName, wcslen(aa->FriendlyName),
             name, PATH_MAX_LENGTH, NULL, NULL);
 
       for (ua = aa->FirstUnicastAddress; ua != NULL; ua = ua->Next)
@@ -121,6 +202,8 @@ bool net_ifinfo_new(net_ifinfo_t *list)
 #else
    struct ifaddrs *ifa     = NULL;
    struct ifaddrs *ifaddr  = NULL;
+
+   memset(list, 0, sizeof(net_ifinfo_t));
 
    if (getifaddrs(&ifaddr) == -1)
       goto error;
@@ -166,7 +249,7 @@ error:
 #ifdef _WIN32
    if (adapter_addresses)
       free(adapter_addresses);
-#else
+#elif !defined(HAVE_LIBNX) && !defined(_3DS)
    freeifaddrs(ifaddr);
 #endif
    net_ifinfo_free(list);

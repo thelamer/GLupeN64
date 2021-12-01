@@ -34,10 +34,9 @@
  * optimizations are not included to reduce source code size and avoid
  * compile-time configuration.
  */
+#include <lrc_hash.h>
 
 #include <string.h>
-
-#include "rhash.h"
 
 /*
  * The basic MD5 functions.
@@ -218,24 +217,27 @@ void MD5_Update(MD5_CTX *ctx, const void *data, unsigned long size)
 
 	used = saved_lo & 0x3f;
 
-	if (used) {
-		available = 64 - used;
+	if (used)
+   {
+      available = 64 - used;
 
-		if (size < available) {
-			memcpy(&ctx->buffer[used], data, size);
-			return;
-		}
+      if (size < available)
+      {
+         memcpy(&ctx->buffer[used], data, size);
+         return;
+      }
 
-		memcpy(&ctx->buffer[used], data, available);
-		data = (const unsigned char *)data + available;
-		size -= available;
-		MD5_body(ctx, ctx->buffer, 64);
-	}
+      memcpy(&ctx->buffer[used], data, available);
+      data = (const unsigned char *)data + available;
+      size -= available;
+      MD5_body(ctx, ctx->buffer, 64);
+   }
 
-	if (size >= 64) {
-		data = MD5_body(ctx, data, size & ~(unsigned long)0x3f);
-		size &= 0x3f;
-	}
+	if (size >= 64)
+   {
+      data = MD5_body(ctx, data, size & ~(unsigned long)0x3f);
+      size &= 0x3f;
+   }
 
 	memcpy(ctx->buffer, data, size);
 }
@@ -250,12 +252,13 @@ void MD5_Final(unsigned char *result, MD5_CTX *ctx)
 
 	available = 64 - used;
 
-	if (available < 8) {
-		memset(&ctx->buffer[used], 0, available);
-		MD5_body(ctx, ctx->buffer, 64);
-		used = 0;
-		available = 64;
-	}
+	if (available < 8)
+   {
+      memset(&ctx->buffer[used], 0, available);
+      MD5_body(ctx, ctx->buffer, 64);
+      used = 0;
+      available = 64;
+   }
 
 	memset(&ctx->buffer[used], 0, available - 8);
 
@@ -290,54 +293,3 @@ void MD5_Final(unsigned char *result, MD5_CTX *ctx)
 
 	memset(ctx, 0, sizeof(*ctx));
 }
-
-#ifdef MD5_BUILD_UTILITY
-
-#include <stdio.h>
-
-int main (int argc, char *argv[])
-{
-   /* For each command line argument in turn:
-    ** filename          -- prints message digest and name of file
-    */
-   int i;
-   MD5_CTX ctx;
-   FILE* file;
-   size_t numread;
-   char buffer[16384];
-   unsigned char result[16];
-
-   for (i = 1; i < argc; i++)
-   {
-      MD5_Init(&ctx);
-      file = fopen(argv[i], "rb");
-
-      if (file)
-      {
-         do
-         {
-            numread = fread((void*)buffer, 1, sizeof(buffer), file);
-
-            if (numread)
-            {
-               MD5_Update(&ctx,(void*)buffer, numread);
-            }
-         }
-         while (numread);
-
-         fclose(file);
-         MD5_Final(result, &ctx);
-         printf("%02x%02x%02x%02x%02x%02x%02x%02x"
-			          "%02x%02x%02x%02x%02x%02x%02x%02x %s\n",
-			          result[ 0 ], result[ 1 ], result[ 2 ], result[ 3 ],
-                result[ 4 ], result[ 5 ], result[ 6 ], result[ 7 ],
-                result[ 8 ], result[ 9 ], result[ 10 ], result[ 11 ],
-                result[ 12 ], result[ 13 ], result[ 14 ], result[ 15 ],
-                argv[i]);
-      }
-   }
-
-   return 0;
-}
-
-#endif
